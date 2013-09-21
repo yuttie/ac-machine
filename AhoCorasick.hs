@@ -1,7 +1,10 @@
 {-# LANGUAGE DeriveGeneric #-}
 module AhoCorasick
     ( ACMachine
+    , State(..)
     , construct
+    , run
+    , step
     ) where
 
 import           Control.Monad
@@ -29,6 +32,23 @@ construct ps = ACMachine gotoMap failureMap outputMap
     gotoMap = buildGoto ps
     failureMap = buildFailure gotoMap
     outputMap = buildOutput ps gotoMap failureMap
+
+run :: (Eq char, Hashable char) => ACMachine char -> [char] -> [[char]]
+run acm = go Root
+  where
+    go _ [] = []
+    go s (x:xs) = found ++ go s' xs
+      where
+        (s', found) = step acm x s
+
+step :: (Eq char, Hashable char) => ACMachine char -> char -> State -> (State, [[char]])
+step (ACMachine g f o) x s = (s', output s')
+  where
+    s' = head $ mapMaybe (flip goto x) $ iterate failure s
+    goto Root x' = Just $ fromMaybe Root $ Map.lookup Root g >>= Map.lookup x'
+    goto s'' x' = Map.lookup s'' g >>= Map.lookup x'
+    failure = fromMaybe (error "failure: ") . flip Map.lookup f
+    output = fromMaybe [] . flip Map.lookup o
 
 buildOutput :: (Eq char, Hashable char) => [[char]] -> Goto char -> Failure -> Output char
 buildOutput ps gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
