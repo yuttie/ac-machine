@@ -130,7 +130,7 @@ renderGraph (ACMachine g f o) =
     state s@Root = node (stateID s) [("shape", "doublecircle")]
     state s = node (stateID s) [("shape", "circle")]
     stateWithOutput (s, xs) = node (stateID s) [("label", "<" ++ tableHTML (stateID s) ("{" ++ intercalate "," xs ++ "}") ++ ">"), ("shape", "none")]
-    tableHTML row1 row2 = "<table><tr><td>" ++ row1 ++ "</td></tr><tr><td>" ++ row2 ++ "</td></tr></table>"
+    tableHTML row1 row2 = "<table cellborder=\"0\"><tr><td>" ++ row1 ++ "</td></tr><tr><td>" ++ row2 ++ "</td></tr></table>"
     stateID Root = "Root"
     stateID (State n) = 'S' : show n
     transEdge s x s' = stateID s ++ " -> " ++ stateID s' ++ " [label=\"" ++ [x] ++ "\"];"
