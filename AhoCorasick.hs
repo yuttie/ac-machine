@@ -5,6 +5,7 @@ module AhoCorasick
     , construct
     , run
     , step
+    , renderGraph
     ) where
 
 import           Control.Monad
@@ -109,3 +110,28 @@ toBFList m = ss0
 
 lookupDefault :: (Eq k, Hashable k) => v -> k -> HashMap k v -> v
 lookupDefault def k m = fromMaybe def $ Map.lookup k m
+
+renderGraph :: ACMachine Char -> String
+renderGraph (ACMachine g f o) =
+    graph "digraph" $ statements [
+          attr "graph" [("rankdir", "LR")]
+        , statements $ map state (toBFList g)
+        , statements $ map stateWithOutput $ filter (not . null . snd) $ Map.toList o
+        , statements $ map (\s -> statements $ map (uncurry $ transEdge s) $ Map.toList $ lookupDefault Map.empty s g) (toBFList g)
+        , statements $ map (\s -> failEdge s $ failure s) (tail $ toBFList g)
+        ]
+  where
+    failure = fromMaybe (error "failure: ") . flip Map.lookup f
+    statements = intercalate " "
+    graph typ body = typ ++ " { " ++ body ++ " }"
+    attr typ attrList = typ ++ " " ++ "[" ++ intercalate "," (map kvStr attrList) ++ "];"
+    node nid attrList = nid ++ " " ++ "[" ++ intercalate "," (map kvStr attrList) ++ "];"
+    kvStr (k, v) = k ++ "=" ++ v
+    state s@Root = node (stateID s) [("shape", "doublecircle")]
+    state s = node (stateID s) [("shape", "circle")]
+    stateWithOutput (s, xs) = node (stateID s) [("label", "<" ++ tableHTML (stateID s) ("{" ++ intercalate "," xs ++ "}") ++ ">"), ("shape", "none")]
+    tableHTML row1 row2 = "<table><tr><td>" ++ row1 ++ "</td></tr><tr><td>" ++ row2 ++ "</td></tr></table>"
+    stateID Root = "Root"
+    stateID (State n) = 'S' : show n
+    transEdge s x s' = stateID s ++ " -> " ++ stateID s' ++ " [label=\"" ++ [x] ++ "\"];"
+    failEdge s s' = stateID s ++ " -> " ++ stateID s' ++ " [style=dashed, constraint=false];"
