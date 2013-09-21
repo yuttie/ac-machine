@@ -1,29 +1,30 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Main where
+module AhoCorasick
+    ( ACMachine
+    , construct
+    ) where
 
-import Control.Monad
-import Data.Maybe (fromMaybe)
-import GHC.Generics (Generic)
-import System.IO
-import Data.List
-import Data.Maybe
-import Data.Hashable (Hashable)
-import Data.HashMap.Strict (HashMap)
+import           Control.Monad
+import           Data.Hashable       (Hashable)
+import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
+import           Data.List
+import           Data.Maybe
+import           GHC.Generics        (Generic)
 
+
+data ACMachine char = ACMachine (Goto char) Failure (Output char)
+
+type Goto char   = HashMap State (HashMap char State)
+type Failure     = HashMap State State
+type Output char = HashMap State [[char]]
 
 data State = Root | State Int
            deriving (Eq, Generic)
 instance Hashable State
 
-type Goto char = HashMap State (HashMap char State)
-type Failure = HashMap State State
-type Output char = HashMap State [[char]]
-
-data ACM char = ACM (Goto char) Failure (Output char)
-
-acm :: (Eq char, Hashable char) => [[char]] -> ACM char
-acm ps = ACM gotoMap failureMap outputMap
+construct :: (Eq char, Hashable char) => [[char]] -> ACMachine char
+construct ps = ACMachine gotoMap failureMap outputMap
   where
     gotoMap = buildGoto ps
     failureMap = buildFailure gotoMap
@@ -43,10 +44,10 @@ finalState :: (Eq char, Hashable char) => Goto char -> State -> [char] -> Maybe 
 finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
 
 buildGoto :: (Eq char, Hashable char) => [[char]] -> Goto char
-buildGoto = foldl' (flip Main.insert) Map.empty
+buildGoto = foldl' (flip extend) Map.empty
 
-insert :: (Eq char, Hashable char) => [char] -> Goto char -> Goto char
-insert = go Root
+extend :: (Eq char, Hashable char) => [char] -> Goto char -> Goto char
+extend = go Root
   where
     go _ [] m = m
     go s (x:xs) m = case Map.lookup x sm of
@@ -88,7 +89,3 @@ toBFList m = ss0
 
 lookupDefault :: (Eq k, Hashable k) => v -> k -> HashMap k v -> v
 lookupDefault def k m = fromMaybe def $ Map.lookup k m
-
-main :: IO ()
-main = do
-    return ()
