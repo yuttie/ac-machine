@@ -17,24 +17,24 @@ import           Data.Maybe
 import           GHC.Generics        (Generic)
 
 
-data ACMachine char = ACMachine (Goto char) Failure (Output char)
+data ACMachine a = ACMachine (Goto a) Failure (Output a)
 
-type Goto char   = HashMap State (HashMap char State)
-type Failure     = HashMap State State
-type Output char = HashMap State [[char]]
+type Goto a   = HashMap State (HashMap a State)
+type Failure  = HashMap State State
+type Output a = HashMap State [[a]]
 
 data State = Root | State Int
            deriving (Eq, Generic)
 instance Hashable State
 
-construct :: (Eq char, Hashable char) => [[char]] -> ACMachine char
+construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a
 construct ps = ACMachine gotoMap failureMap outputMap
   where
     gotoMap = buildGoto ps
     failureMap = buildFailure gotoMap
     outputMap = buildOutput ps gotoMap failureMap
 
-run :: (Eq char, Hashable char) => ACMachine char -> [char] -> [[char]]
+run :: (Eq a, Hashable a) => ACMachine a -> [a] -> [[a]]
 run acm = go Root
   where
     go _ [] = []
@@ -42,7 +42,7 @@ run acm = go Root
       where
         (s', found) = step acm x s
 
-step :: (Eq char, Hashable char) => ACMachine char -> char -> State -> (State, [[char]])
+step :: (Eq a, Hashable a) => ACMachine a -> a -> State -> (State, [[a]])
 step (ACMachine g f o) x s = (s', output s')
   where
     s' = head $ mapMaybe (flip goto x) $ iterate failure s
@@ -51,7 +51,7 @@ step (ACMachine g f o) x s = (s', output s')
     failure = fromMaybe (error "failure: ") . flip Map.lookup f
     output = fromMaybe [] . flip Map.lookup o
 
-buildOutput :: (Eq char, Hashable char) => [[char]] -> Goto char -> Failure -> Output char
+buildOutput :: (Eq a, Hashable a) => [[a]] -> Goto a -> Failure -> Output a
 buildOutput ps gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
   where
     build o s = foldl' (\a (_, s') -> Map.insertWith (++) s' (lookupDefault [] (failure s') a) a) o ts
@@ -61,13 +61,13 @@ buildOutput ps gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
     o0 = Map.fromList $ zip patStates (map (:[]) ps)
     patStates = fromJust $ mapM (finalState gotoMap Root) ps
 
-finalState :: (Eq char, Hashable char) => Goto char -> State -> [char] -> Maybe State
+finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
 finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
 
-buildGoto :: (Eq char, Hashable char) => [[char]] -> Goto char
+buildGoto :: (Eq a, Hashable a) => [[a]] -> Goto a
 buildGoto = foldl' (flip extend) Map.empty
 
-extend :: (Eq char, Hashable char) => [char] -> Goto char -> Goto char
+extend :: (Eq a, Hashable a) => [a] -> Goto a -> Goto a
 extend = go Root
   where
     go _ [] m = m
@@ -81,7 +81,7 @@ extend = go Root
       where
         sm = fromMaybe Map.empty $ Map.lookup s m
 
-buildFailure :: (Eq char, Hashable char) => Goto char -> Failure
+buildFailure :: (Eq a, Hashable a) => Goto a -> Failure
 buildFailure m = foldl' build Map.empty $ toBFList m
   where
     build f s = foldl' (\a (x, s') -> Map.insert s' (failureState f s x) a) f ts
@@ -94,7 +94,7 @@ buildFailure m = foldl' build Map.empty $ toBFList m
     goto Root x = Just $ fromMaybe Root $ Map.lookup Root m >>= Map.lookup x
     goto s x = Map.lookup s m >>= Map.lookup x
 
-toBFList :: Goto char -> [State]
+toBFList :: Goto a -> [State]
 toBFList m = ss0
   where
     ss0 = Root : go 1 ss0
