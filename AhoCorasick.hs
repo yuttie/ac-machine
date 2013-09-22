@@ -19,6 +19,11 @@ import           GHC.Generics        (Generic)
 
 data ACMachine a = ACMachine (Goto a) Failure (Output a)
 
+data Match a = Match
+    { matchPos   :: Int
+    , matchValue :: [a]
+    } deriving (Show)
+
 type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
 type Output a = HashMap State [[a]]
@@ -34,13 +39,14 @@ construct ps = ACMachine gotoMap failureMap outputMap
     failureMap = buildFailure gotoMap
     outputMap = buildOutput ps gotoMap failureMap
 
-run :: (Eq a, Hashable a) => ACMachine a -> [a] -> [[a]]
-run acm = go Root
+run :: (Eq a, Hashable a) => ACMachine a -> [a] -> [Match a]
+run acm = go Root . zip [1..]
   where
     go _ [] = []
-    go s (x:xs) = found ++ go s' xs
+    go s ((i, x):ixs) = map toMatch vs ++ go s' ixs
       where
-        (s', found) = step acm x s
+        toMatch v = Match { matchPos = i - length v + 1, matchValue = v }
+        (s', vs) = step acm x s
 
 step :: (Eq a, Hashable a) => ACMachine a -> a -> State -> (State, [[a]])
 step (ACMachine g f o) x s = (s', output s')
