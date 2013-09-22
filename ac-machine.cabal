@@ -6,7 +6,6 @@ license:             BSD3
 license-file:        LICENSE
 author:              Yuta Taniguchi
 maintainer:          yuta.taniguchi.y.t@gmail.com
--- copyright:           
 category:            Data
 build-type:          Simple
 extra-source-files:  examples/Simple.hs
