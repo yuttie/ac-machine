@@ -2,6 +2,7 @@
 module AhoCorasick
     ( ACMachine
     , State(..)
+    , Match(..)
     , construct
     , run
     , step
@@ -19,11 +20,6 @@ import           GHC.Generics        (Generic)
 
 data ACMachine a v = ACMachine (Goto a) Failure (Output v)
 
-data Match v = Match
-    { matchPos   :: Int
-    , matchValue :: v
-    } deriving (Show)
-
 type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
 type Output v = HashMap State [(Int, v)]
@@ -31,6 +27,11 @@ type Output v = HashMap State [(Int, v)]
 data State = Root | State Int
            deriving (Eq, Generic)
 instance Hashable State
+
+data Match v = Match
+    { matchPos   :: Int
+    , matchValue :: v
+    } deriving (Show)
 
 construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
 construct ps = ACMachine gotoMap failureMap outputMap
