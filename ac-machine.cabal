@@ -1,6 +1,6 @@
 name:                ac-machine
 version:             0.1.0.0
--- synopsis:            
+synopsis:            Aho-Corasick string matching algorithm in Haskell
 -- description:         
 license:             BSD3
 license-file:        LICENSE
