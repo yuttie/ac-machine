@@ -4,6 +4,7 @@ module AhoCorasick
     , State(..)
     , Match(..)
     , construct
+    , constructWithValues
     , run
     , step
     , renderGraph
@@ -40,6 +41,14 @@ construct ps = ACMachine gotoMap failureMap outputMap
     failureMap = buildFailure gotoMap
     outputMap = buildOutput pvs gotoMap failureMap
     pvs = zip ps ps
+
+constructWithValues :: (Eq a, Hashable a) => [([a], v)] -> ACMachine a v
+constructWithValues pvs = ACMachine gotoMap failureMap outputMap
+  where
+    gotoMap = buildGoto ps
+    failureMap = buildFailure gotoMap
+    outputMap = buildOutput pvs gotoMap failureMap
+    ps = map fst pvs
 
 run :: (Eq a, Hashable a) => ACMachine a v -> [a] -> [Match v]
 run acm = go Root . zip [1..]
