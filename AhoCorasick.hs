@@ -17,38 +17,39 @@ import           Data.Maybe
 import           GHC.Generics        (Generic)
 
 
-data ACMachine a = ACMachine (Goto a) Failure (Output a)
+data ACMachine a v = ACMachine (Goto a) Failure (Output v)
 
-data Match a = Match
+data Match v = Match
     { matchPos   :: Int
-    , matchValue :: [a]
+    , matchValue :: v
     } deriving (Show)
 
 type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
-type Output a = HashMap State [[a]]
+type Output v = HashMap State [(Int, v)]
 
 data State = Root | State Int
            deriving (Eq, Generic)
 instance Hashable State
 
-construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a
+construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
 construct ps = ACMachine gotoMap failureMap outputMap
   where
     gotoMap = buildGoto ps
     failureMap = buildFailure gotoMap
-    outputMap = buildOutput ps gotoMap failureMap
+    outputMap = buildOutput pvs gotoMap failureMap
+    pvs = zip ps ps
 
-run :: (Eq a, Hashable a) => ACMachine a -> [a] -> [Match a]
+run :: (Eq a, Hashable a) => ACMachine a v -> [a] -> [Match v]
 run acm = go Root . zip [1..]
   where
     go _ [] = []
     go s ((i, x):ixs) = map toMatch vs ++ go s' ixs
       where
-        toMatch v = Match { matchPos = i - length v + 1, matchValue = v }
+        toMatch (l, v) = Match { matchPos = i - l + 1, matchValue = v }
         (s', vs) = step acm x s
 
-step :: (Eq a, Hashable a) => ACMachine a -> a -> State -> (State, [[a]])
+step :: (Eq a, Hashable a) => ACMachine a v -> a -> State -> (State, [(Int, v)])
 step (ACMachine g f o) x s = (s', output s')
   where
     s' = head $ mapMaybe (flip goto x) $ iterate failure s
@@ -57,15 +58,17 @@ step (ACMachine g f o) x s = (s', output s')
     failure = fromMaybe (error "failure: ") . flip Map.lookup f
     output = fromMaybe [] . flip Map.lookup o
 
-buildOutput :: (Eq a, Hashable a) => [[a]] -> Goto a -> Failure -> Output a
-buildOutput ps gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
+buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> Failure -> Output v
+buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
   where
     build o s = foldl' (\a (_, s') -> Map.insertWith (flip (++)) s' (lookupDefault [] (failure s') a) a) o ts
       where
         ts = Map.toList $ lookupDefault Map.empty s gotoMap
     failure = fromMaybe (error "failure: ") . flip Map.lookup failureMap
-    o0 = Map.fromList $ zip patStates (map (:[]) ps)
-    patStates = fromJust $ mapM (finalState gotoMap Root) ps
+    o0 = Map.fromList $ fromJust $ mapM toKV pvs
+    toKV (p, v) = do
+        s <- finalState gotoMap Root p
+        return (s, [(length p, v)])
 
 finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
 finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
@@ -117,7 +120,7 @@ toBFList m = ss0
 lookupDefault :: (Eq k, Hashable k) => v -> k -> HashMap k v -> v
 lookupDefault def k m = fromMaybe def $ Map.lookup k m
 
-renderGraph :: ACMachine Char -> String
+renderGraph :: ACMachine Char [Char] -> String
 renderGraph (ACMachine g f o) =
     graph "digraph" $ statements [
           attr "graph" [("rankdir", "LR")]
@@ -135,7 +138,7 @@ renderGraph (ACMachine g f o) =
     kvStr (k, v) = k ++ "=" ++ v
     state s@Root = node (stateID s) [("shape", "doublecircle")]
     state s = node (stateID s) [("shape", "circle")]
-    stateWithOutput (s, xs) = node (stateID s) [("label", "<" ++ tableHTML (stateID s) ("{" ++ intercalate "," xs ++ "}") ++ ">"), ("shape", "none")]
+    stateWithOutput (s, xs) = node (stateID s) [("label", "<" ++ tableHTML (stateID s) ("{" ++ intercalate "," (map snd xs) ++ "}") ++ ">"), ("shape", "none")]
     tableHTML row1 row2 = "<table cellborder=\"0\"><tr><td>" ++ row1 ++ "</td></tr><tr><td>" ++ row2 ++ "</td></tr></table>"
     stateID Root = "Root"
     stateID (State n) = 'S' : show n
