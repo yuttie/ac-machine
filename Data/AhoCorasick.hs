@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-module AhoCorasick
+module Data.AhoCorasick
     ( ACMachine
     , State(..)
     , Match(..)
