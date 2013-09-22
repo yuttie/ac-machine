@@ -9,7 +9,7 @@ maintainer:          yuta.taniguchi.y.t@gmail.com
 -- copyright:           
 category:            Data
 build-type:          Simple
--- extra-source-files:  
+extra-source-files:  examples/Simple.hs
 cabal-version:       >=1.10
 
 library
