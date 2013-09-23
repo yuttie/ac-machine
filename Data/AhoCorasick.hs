@@ -17,10 +17,16 @@ import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import           Data.List
 import           Data.Maybe
+import           Data.Vector         (Vector)
+import qualified Data.Vector         as V
 import           GHC.Generics        (Generic)
 
 
-data ACMachine a v = ACMachine (Goto a) Failure (Output v)
+data ACMachine a v = ACMachine (GotoA a) FailureA (OutputA v)
+
+type GotoA a   = Vector (HashMap a State)
+type FailureA  = Vector State
+type OutputA v = Vector [(Int, v)]
 
 type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
@@ -36,20 +42,31 @@ data Match v = Match
     } deriving (Show)
 
 construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
-construct ps = ACMachine gotoMap failureMap outputMap
+construct ps = ACMachine (toGotoArray n gotoMap) (toFailureArray n failureMap) (toOutputArray n outputMap)
   where
-    gotoMap = buildGoto ps
+    (m, gotoMap) = buildGoto ps
+    n = m + 1
     failureMap = buildFailure gotoMap
     outputMap = buildOutput pvs gotoMap failureMap
     pvs = zip ps ps
 
 constructWithValues :: (Eq a, Hashable a) => [([a], v)] -> ACMachine a v
-constructWithValues pvs = ACMachine gotoMap failureMap outputMap
+constructWithValues pvs = ACMachine (toGotoArray n gotoMap) (toFailureArray n failureMap) (toOutputArray n outputMap)
   where
-    gotoMap = buildGoto ps
+    (m, gotoMap) = buildGoto ps
+    n = m + 1
     failureMap = buildFailure gotoMap
     outputMap = buildOutput pvs gotoMap failureMap
     ps = map fst pvs
+
+toGotoArray :: Int -> Goto a -> GotoA a
+toGotoArray n m = V.generate n (fromMaybe Map.empty . flip Map.lookup m . State)
+
+toFailureArray :: Int -> Failure -> FailureA
+toFailureArray n m = V.generate n (fromMaybe (error "failure: ") . flip Map.lookup m . State)
+
+toOutputArray :: Int -> Output v -> OutputA v
+toOutputArray n m = V.generate n (fromMaybe [] . flip Map.lookup m . State)
 
 root :: State
 root = State 0
@@ -67,10 +84,10 @@ step :: (Eq a, Hashable a) => ACMachine a v -> a -> State -> (State, [(Int, v)])
 step (ACMachine g f o) x s = (s', output s')
   where
     s' = head $ mapMaybe (flip goto x) $ iterate failure s
-    goto (State 0) x' = (Map.lookup root g >>= Map.lookup x') <|> Just root
-    goto s'' x' = Map.lookup s'' g >>= Map.lookup x'
-    failure = fromMaybe (error "failure: ") . flip Map.lookup f
-    output = fromMaybe [] . flip Map.lookup o
+    goto (State 0) x' = (Map.lookup x' $ g V.! 0) <|> Just root
+    goto (State i) x' = Map.lookup x' $ g V.! i
+    failure (State i) = f V.! i
+    output (State i) = o V.! i
 
 buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> Failure -> Output v
 buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
@@ -87,8 +104,8 @@ buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
 finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
 finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
 
-buildGoto :: (Eq a, Hashable a) => [[a]] -> Goto a
-buildGoto = snd . foldl' (flip extend) (0, Map.empty)
+buildGoto :: (Eq a, Hashable a) => [[a]] -> (Int, Goto a)
+buildGoto = foldl' (flip extend) (0, Map.empty)
 
 extend :: (Eq a, Hashable a) => [a] -> (Int, Goto a) -> (Int, Goto a)
 extend = go root
@@ -130,6 +147,17 @@ toBFList m = ss0
             children = Map.elems sm
     go _ _ = error "toBFList: invalid state"
 
+toBFList' :: GotoA a -> [State]
+toBFList' v = ss0
+  where
+    ss0 = root : go 1 ss0
+    go 0 _ = []
+    go n ((State i):ss) = children ++ go (n - 1 + Map.size sm) ss
+      where
+        sm = v V.! i
+        children = Map.elems sm
+    go _ _ = error "toBFList: invalid state"
+
 lookupDefault :: (Eq k, Hashable k) => v -> k -> HashMap k v -> v
 lookupDefault def k m = fromMaybe def $ Map.lookup k m
 
@@ -137,13 +165,12 @@ renderGraph :: ACMachine Char [Char] -> String
 renderGraph (ACMachine g f o) =
     graph "digraph" $ statements [
           attr "graph" [("rankdir", "LR")]
-        , statements $ map state (toBFList g)
-        , statements $ map stateWithOutput $ filter (not . null . snd) $ Map.toList o
-        , statements $ map (\s -> statements $ map (uncurry $ transEdge s) $ Map.toList $ lookupDefault Map.empty s g) (toBFList g)
-        , statements $ map (\s -> failEdge s $ failure s) (tail $ toBFList g)
+        , statements $ map state (toBFList' g)
+        , statements $ map stateWithOutput $ filter (not . null . snd) $ zip (map State [0..]) (V.toList o)
+        , statements $ map (\s@(State i) -> statements $ map (uncurry $ transEdge s) $ Map.toList $ g V.! i) (toBFList' g)
+        , statements $ map (\s@(State i) -> failEdge s $ f V.! i) (tail $ toBFList' g)
         ]
   where
-    failure = fromMaybe (error "failure: ") . flip Map.lookup f
     statements = intercalate " "
     graph typ body = typ ++ " { " ++ body ++ " }"
     attr typ attrList = typ ++ " " ++ "[" ++ intercalate "," (map kvStr attrList) ++ "];"
