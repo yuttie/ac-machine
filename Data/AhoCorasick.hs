@@ -5,6 +5,7 @@ module Data.AhoCorasick
     , Match(..)
     , construct
     , constructWithValues
+    , root
     , run
     , step
     , renderGraph
