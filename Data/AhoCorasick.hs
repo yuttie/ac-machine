@@ -26,7 +26,7 @@ type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
 type Output v = HashMap State [(Int, v)]
 
-data State = Root | State Int
+data State = Root | State !Int
            deriving (Eq, Generic)
 instance Hashable State
 
@@ -94,7 +94,7 @@ extend = go Root
     go s (x:xs) m = case Map.lookup x sm of
         Nothing -> go s' xs m'
           where
-            s' = State $ Map.foldl' (\a -> (a +) . Map.size) 0 m + 1  -- root is 0
+            s' = State $! Map.foldl' (\a -> (a +) . Map.size) 0 m + 1  -- root is 0
             sm' = Map.insert x s' sm
             m' = Map.insert s sm' m
         Just s' -> go s' xs m
