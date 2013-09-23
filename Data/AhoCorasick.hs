@@ -26,8 +26,8 @@ type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
 type Output v = HashMap State [(Int, v)]
 
-data State = Root | State {-# UNPACK #-} !Int
-           deriving (Eq, Generic)
+newtype State = State Int
+              deriving (Eq, Generic)
 instance Hashable State
 
 data Match v = Match
@@ -51,8 +51,11 @@ constructWithValues pvs = ACMachine gotoMap failureMap outputMap
     outputMap = buildOutput pvs gotoMap failureMap
     ps = map fst pvs
 
+root :: State
+root = State 0
+
 run :: (Eq a, Hashable a) => ACMachine a v -> [a] -> [Match v]
-run acm = go Root . zip [1..]
+run acm = go root . zip [1..]
   where
     go _ [] = []
     go s ((i, x):ixs) = map toMatch vs ++ go s' ixs
@@ -64,7 +67,7 @@ step :: (Eq a, Hashable a) => ACMachine a v -> a -> State -> (State, [(Int, v)])
 step (ACMachine g f o) x s = (s', output s')
   where
     s' = head $ mapMaybe (flip goto x) $ iterate failure s
-    goto Root x' = (Map.lookup Root g >>= Map.lookup x') <|> Just Root
+    goto (State 0) x' = (Map.lookup root g >>= Map.lookup x') <|> Just root
     goto s'' x' = Map.lookup s'' g >>= Map.lookup x'
     failure = fromMaybe (error "failure: ") . flip Map.lookup f
     output = fromMaybe [] . flip Map.lookup o
@@ -78,7 +81,7 @@ buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
     failure = fromMaybe (error "failure: ") . flip Map.lookup failureMap
     o0 = Map.fromList $ fromJust $ mapM toKV pvs
     toKV (p, v) = do
-        s <- finalState gotoMap Root p
+        s <- finalState gotoMap root p
         return (s, [(length p, v)])
 
 finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
@@ -88,7 +91,7 @@ buildGoto :: (Eq a, Hashable a) => [[a]] -> Goto a
 buildGoto = snd . foldl' (flip extend) (0, Map.empty)
 
 extend :: (Eq a, Hashable a) => [a] -> (Int, Goto a) -> (Int, Goto a)
-extend = go Root
+extend = go root
   where
     go _ [] nm = nm
     go s (x:xs) nm@(n, m) = case Map.lookup x sm of
@@ -108,17 +111,17 @@ buildFailure m = foldl' build Map.empty $ toBFList m
     build f s = foldl' (\a (x, s') -> Map.insert s' (failureState f s x) a) f ts
       where
         ts = Map.toList $ lookupDefault Map.empty s m
-    failureState _ Root _ = Root
+    failureState _ (State 0) _ = root
     failureState f s x = head $ mapMaybe (flip goto x) $ iterate failure (failure s)
       where
         failure = fromMaybe (error "failure: ") . flip Map.lookup f
-    goto Root x = (Map.lookup Root m >>= Map.lookup x) <|> Just Root
+    goto (State 0) x = (Map.lookup root m >>= Map.lookup x) <|> Just root
     goto s x = Map.lookup s m >>= Map.lookup x
 
 toBFList :: Goto a -> [State]
 toBFList m = ss0
   where
-    ss0 = Root : go 1 ss0
+    ss0 = root : go 1 ss0
     go 0 _ = []
     go n (s:ss) = case Map.lookup s m of
         Nothing -> go (n - 1) ss
@@ -146,11 +149,11 @@ renderGraph (ACMachine g f o) =
     attr typ attrList = typ ++ " " ++ "[" ++ intercalate "," (map kvStr attrList) ++ "];"
     node nid attrList = nid ++ " " ++ "[" ++ intercalate "," (map kvStr attrList) ++ "];"
     kvStr (k, v) = k ++ "=" ++ v
-    state s@Root = node (stateID s) [("shape", "doublecircle")]
+    state s@(State 0) = node (stateID s) [("shape", "doublecircle")]
     state s = node (stateID s) [("shape", "circle")]
     stateWithOutput (s, xs) = node (stateID s) [("label", "<" ++ tableHTML (stateID s) ("{" ++ intercalate "," (map snd xs) ++ "}") ++ ">"), ("shape", "none")]
     tableHTML row1 row2 = "<table cellborder=\"0\"><tr><td>" ++ row1 ++ "</td></tr><tr><td>" ++ row2 ++ "</td></tr></table>"
-    stateID Root = "Root"
+    stateID (State 0) = "Root"
     stateID (State n) = 'S' : show n
     transEdge s x s' = stateID s ++ " -> " ++ stateID s' ++ " [label=\"" ++ [x] ++ "\"];"
     failEdge s s' = stateID s ++ " -> " ++ stateID s' ++ " [style=dashed, constraint=false];"
