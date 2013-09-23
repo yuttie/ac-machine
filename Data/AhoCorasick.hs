@@ -22,15 +22,15 @@ import qualified Data.Vector         as V
 import           GHC.Generics        (Generic)
 
 
-data ACMachine a v = ACMachine (GotoA a) FailureA (OutputA v)
+data ACMachine a v = ACMachine (Goto a) Failure (Output v)
 
-type GotoA a   = Vector (HashMap a State)
-type FailureA  = Vector State
-type OutputA v = Vector [(Int, v)]
+type Goto a   = Vector (HashMap a State)
+type Failure  = Vector State
+type Output v = Vector [(Int, v)]
 
-type Goto a   = HashMap State (HashMap a State)
-type Failure  = HashMap State State
-type Output v = HashMap State [(Int, v)]
+type GotoMap a   = HashMap State (HashMap a State)
+type FailureMap  = HashMap State State
+type OutputMap v = HashMap State [(Int, v)]
 
 newtype State = State Int
               deriving (Eq, Generic)
@@ -59,13 +59,13 @@ constructWithValues pvs = ACMachine (toGotoArray n gotoMap) (toFailureArray n fa
     outputMap = buildOutput pvs gotoMap failureMap
     ps = map fst pvs
 
-toGotoArray :: Int -> Goto a -> GotoA a
+toGotoArray :: Int -> GotoMap a -> Goto a
 toGotoArray n m = V.generate n (fromMaybe Map.empty . flip Map.lookup m . State)
 
-toFailureArray :: Int -> Failure -> FailureA
+toFailureArray :: Int -> FailureMap -> Failure
 toFailureArray n m = V.generate n (fromMaybe (error "failure: ") . flip Map.lookup m . State)
 
-toOutputArray :: Int -> Output v -> OutputA v
+toOutputArray :: Int -> OutputMap v -> Output v
 toOutputArray n m = V.generate n (fromMaybe [] . flip Map.lookup m . State)
 
 root :: State
@@ -89,7 +89,7 @@ step (ACMachine g f o) x s = (s', output s')
     failure (State i) = f V.! i
     output (State i) = o V.! i
 
-buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> Failure -> Output v
+buildOutput :: (Eq a, Hashable a) => [([a], v)] -> GotoMap a -> FailureMap -> OutputMap v
 buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
   where
     build o s = foldl' (\a (_, s') -> Map.insertWith (flip (++)) s' (lookupDefault [] (failure s') a) a) o ts
@@ -101,13 +101,13 @@ buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
         s <- finalState gotoMap root p
         return (s, [(length p, v)])
 
-finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
+finalState :: (Eq a, Hashable a) => GotoMap a -> State -> [a] -> Maybe State
 finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
 
-buildGoto :: (Eq a, Hashable a) => [[a]] -> (Int, Goto a)
+buildGoto :: (Eq a, Hashable a) => [[a]] -> (Int, GotoMap a)
 buildGoto = foldl' (flip extend) (0, Map.empty)
 
-extend :: (Eq a, Hashable a) => [a] -> (Int, Goto a) -> (Int, Goto a)
+extend :: (Eq a, Hashable a) => [a] -> (Int, GotoMap a) -> (Int, GotoMap a)
 extend = go root
   where
     go _ [] nm = nm
@@ -122,7 +122,7 @@ extend = go root
       where
         sm = fromMaybe Map.empty $ Map.lookup s m
 
-buildFailure :: (Eq a, Hashable a) => Goto a -> Failure
+buildFailure :: (Eq a, Hashable a) => GotoMap a -> FailureMap
 buildFailure m = foldl' build Map.empty $ toBFList m
   where
     build f s = foldl' (\a (x, s') -> Map.insert s' (failureState f s x) a) f ts
@@ -135,7 +135,7 @@ buildFailure m = foldl' build Map.empty $ toBFList m
     goto (State 0) x = (Map.lookup root m >>= Map.lookup x) <|> Just root
     goto s x = Map.lookup s m >>= Map.lookup x
 
-toBFList :: Goto a -> [State]
+toBFList :: GotoMap a -> [State]
 toBFList m = ss0
   where
     ss0 = root : go 1 ss0
@@ -147,7 +147,7 @@ toBFList m = ss0
             children = Map.elems sm
     go _ _ = error "toBFList: invalid state"
 
-toBFList' :: GotoA a -> [State]
+toBFList' :: Goto a -> [State]
 toBFList' v = ss0
   where
     ss0 = root : go 1 ss0
