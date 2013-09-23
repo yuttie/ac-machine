@@ -26,7 +26,7 @@ type Goto a   = HashMap State (HashMap a State)
 type Failure  = HashMap State State
 type Output v = HashMap State [(Int, v)]
 
-data State = Root | State !Int
+data State = Root | State {-# UNPACK #-} !Int
            deriving (Eq, Generic)
 instance Hashable State
 
