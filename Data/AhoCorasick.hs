@@ -10,6 +10,7 @@ module Data.AhoCorasick
     , renderGraph
     ) where
 
+import           Control.Applicative
 import           Control.Monad
 import           Data.Hashable       (Hashable)
 import           Data.HashMap.Strict (HashMap)
@@ -63,7 +64,7 @@ step :: (Eq a, Hashable a) => ACMachine a v -> a -> State -> (State, [(Int, v)])
 step (ACMachine g f o) x s = (s', output s')
   where
     s' = head $ mapMaybe (flip goto x) $ iterate failure s
-    goto Root x' = Just $ fromMaybe Root $ Map.lookup Root g >>= Map.lookup x'
+    goto Root x' = (Map.lookup Root g >>= Map.lookup x') <|> Just Root
     goto s'' x' = Map.lookup s'' g >>= Map.lookup x'
     failure = fromMaybe (error "failure: ") . flip Map.lookup f
     output = fromMaybe [] . flip Map.lookup o
@@ -110,7 +111,7 @@ buildFailure m = foldl' build Map.empty $ toBFList m
     failureState f s x = head $ mapMaybe (flip goto x) $ iterate failure (failure s)
       where
         failure = fromMaybe (error "failure: ") . flip Map.lookup f
-    goto Root x = Just $ fromMaybe Root $ Map.lookup Root m >>= Map.lookup x
+    goto Root x = (Map.lookup Root m >>= Map.lookup x) <|> Just Root
     goto s x = Map.lookup s m >>= Map.lookup x
 
 toBFList :: Goto a -> [State]
