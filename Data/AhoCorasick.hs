@@ -118,13 +118,11 @@ toBFList m = ss0
   where
     ss0 = Root : go 1 ss0
     go 0 _ = []
-    go n (s:ss) = case msm of
+    go n (s:ss) = case Map.lookup s m of
         Nothing -> go (n - 1) ss
         Just sm -> children ++ go (n - 1 + Map.size sm) ss
           where
             children = Map.elems sm
-      where
-        msm = Map.lookup s m
     go _ _ = error "toBFList: invalid state"
 
 lookupDefault :: (Eq k, Hashable k) => v -> k -> HashMap k v -> v
