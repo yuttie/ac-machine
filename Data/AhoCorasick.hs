@@ -85,19 +85,20 @@ finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
 finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
 
 buildGoto :: (Eq a, Hashable a) => [[a]] -> Goto a
-buildGoto = foldl' (flip extend) Map.empty
+buildGoto = snd . foldl' (flip extend) (0, Map.empty)
 
-extend :: (Eq a, Hashable a) => [a] -> Goto a -> Goto a
+extend :: (Eq a, Hashable a) => [a] -> (Int, Goto a) -> (Int, Goto a)
 extend = go Root
   where
-    go _ [] m = m
-    go s (x:xs) m = case Map.lookup x sm of
-        Nothing -> go s' xs m'
+    go _ [] nm = nm
+    go s (x:xs) nm@(n, m) = case Map.lookup x sm of
+        Nothing -> go s' xs (n', m')
           where
-            s' = State $! Map.foldl' (\a -> (a +) . Map.size) 0 m + 1  -- root is 0
+            s' = State n'  -- root is 0
+            n' = n + 1
             sm' = Map.insert x s' sm
             m' = Map.insert s sm' m
-        Just s' -> go s' xs m
+        Just s' -> go s' xs nm
       where
         sm = fromMaybe Map.empty $ Map.lookup s m
 
