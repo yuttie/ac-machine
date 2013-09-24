@@ -97,7 +97,7 @@ buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
       where
         ts = Map.toList $ lookupDefault Map.empty s gotoMap
     failure = fromMaybe (error "failure: ") . flip Map.lookup failureMap
-    o0 = Map.fromList $ fromJust $ mapM toKV pvs
+    o0 = Map.fromList $ map (fromJust . toKV) pvs
     toKV (p, v) = do
         s <- finalState gotoMap root p
         return (s, [(length p, v)])
