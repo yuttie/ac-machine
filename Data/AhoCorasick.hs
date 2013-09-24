@@ -93,7 +93,7 @@ step (ACMachine g f o) x s = (s', output s')
 buildOutput :: (Eq a, Hashable a) => [([a], v)] -> GotoMap a -> FailureMap -> OutputMap v
 buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
   where
-    build o s = foldl' (\a (_, s') -> Map.insertWith (flip (++)) s' (lookupDefault [] (failure s') a) a) o ts
+    build o s = foldl' (\a (_, s') -> let vs = lookupDefault [] (failure s') a in vs `seq` Map.insertWith (flip (++)) s' vs a) o ts
       where
         ts = Map.toList $ lookupDefault Map.empty s gotoMap
     failure = fromMaybe (error "failure: ") . flip Map.lookup failureMap
