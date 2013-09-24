@@ -43,13 +43,7 @@ data Match v = Match
     } deriving (Show)
 
 construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
-construct ps = ACMachine (toGotoArray n gotoMap) (toFailureArray n failureMap) (toOutputArray n outputMap)
-  where
-    (m, gotoMap) = buildGoto ps
-    n = m + 1
-    failureMap = buildFailure gotoMap
-    outputMap = buildOutput pvs gotoMap failureMap
-    pvs = zip ps ps
+construct ps = constructWithValues $ zip ps ps
 
 constructWithValues :: (Eq a, Hashable a) => [([a], v)] -> ACMachine a v
 constructWithValues pvs = ACMachine (toGotoArray n gotoMap) (toFailureArray n failureMap) (toOutputArray n outputMap)
@@ -85,8 +79,8 @@ step :: (Eq a, Hashable a) => ACMachine a v -> a -> State -> (State, [(Int, v)])
 step (ACMachine g f o) x s = (s', output s')
   where
     s' = head $ mapMaybe (flip goto x) $ iterate failure s
-    goto (State 0) x' = (Map.lookup x' $ g V.! 0) <|> Just root
-    goto (State i) x' = Map.lookup x' $ g V.! i
+    goto (State 0) x' = Map.lookup x' (g V.! 0) <|> Just root
+    goto (State i) x' = Map.lookup x' (g V.! i)
     failure (State i) = f V.! i
     output (State i) = o V.! i
 
@@ -153,7 +147,7 @@ toBFList' v = ss0
   where
     ss0 = root : go 1 ss0
     go 0 _ = []
-    go n ((State i):ss) = children ++ go (n - 1 + Map.size sm) ss
+    go n (State i : ss) = children ++ go (n - 1 + Map.size sm) ss
       where
         sm = v V.! i
         children = Map.elems sm
