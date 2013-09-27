@@ -20,6 +20,7 @@ import           Data.List
 import           Data.Maybe
 import           Data.Vector         (Vector)
 import qualified Data.Vector         as V
+import qualified Data.Vector.Mutable as MV
 import           GHC.Generics        (Generic)
 
 
@@ -30,7 +31,6 @@ type Failure  = Vector State
 type Output v = Vector [(Int, v)]
 
 type GotoMap a   = HashMap State (HashMap a State)
-type FailureMap  = HashMap State State
 type OutputMap v = HashMap State [(Int, v)]
 
 newtype State = State Int
@@ -46,20 +46,17 @@ construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
 construct ps = constructWithValues $ zip ps ps
 
 constructWithValues :: (Eq a, Hashable a) => [([a], v)] -> ACMachine a v
-constructWithValues pvs = ACMachine g (toFailureArray n failureMap) (toOutputArray n outputMap)
+constructWithValues pvs = ACMachine g f (toOutputArray n outputMap)
   where
     (m, gotoMap) = buildGoto ps
     n = m + 1
     g = toGotoArray n gotoMap
-    failureMap = buildFailure g
-    outputMap = buildOutput pvs g failureMap
+    f = buildFailure g
+    outputMap = buildOutput pvs g f
     ps = map fst pvs
 
 toGotoArray :: Int -> GotoMap a -> Goto a
 toGotoArray n m = V.generate n (fromMaybe Map.empty . flip Map.lookup m . State)
-
-toFailureArray :: Int -> FailureMap -> Failure
-toFailureArray n m = V.generate n (fromMaybe (error "failure: ") . flip Map.lookup m . State)
 
 toOutputArray :: Int -> OutputMap v -> Output v
 toOutputArray n m = V.generate n (fromMaybe [] . flip Map.lookup m . State)
@@ -85,13 +82,13 @@ step (ACMachine g f o) x s = (s', output s')
     failure (State i) = f V.! i
     output (State i) = o V.! i
 
-buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> FailureMap -> OutputMap v
-buildOutput pvs g failureMap = foldl' build o0 $ tail $ toBFList g
+buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> Failure -> OutputMap v
+buildOutput pvs g f = foldl' build o0 $ tail $ toBFList g
   where
     build o (State i) = foldl' (\a (_, s') -> let vs = lookupDefault [] (failure s') a in vs `seq` Map.insertWith (flip (++)) s' vs a) o ts
       where
         ts = Map.toList (g V.! i)
-    failure = fromMaybe (error "failure: ") . flip Map.lookup failureMap
+    failure (State i) = f V.! i
     o0 = Map.fromList $ map (fromJust . toKV) pvs
     toKV (p, v) = do
         s <- finalState g root p
@@ -118,16 +115,24 @@ extend = go root
       where
         sm = fromMaybe Map.empty $ Map.lookup s m
 
-buildFailure :: (Eq a, Hashable a) => Goto a -> FailureMap
-buildFailure g = foldl' build Map.empty $ toBFList g
+buildFailure :: (Eq a, Hashable a) => Goto a -> Failure
+buildFailure g = V.create $ do
+    f <- MV.new (V.length g)
+    MV.write f 0 (error "Referencing the failure transition from the root node.")
+    forM_ (toBFList g) $ \s@(State i) -> do
+        let ts = Map.toList (g V.! i)
+        forM_ ts $ \(x, State j) -> do
+            s' <- failureState f s x
+            MV.write f j s'
+    return f
   where
-    build f s@(State i) = foldl' (\a (x, s') -> Map.insert s' (failureState f s x) a) f ts
+    failureState _ (State 0) _ = return root
+    failureState f s x = go =<< failure s
       where
-        ts = Map.toList (g V.! i)
-    failureState _ (State 0) _ = root
-    failureState f s x = head $ mapMaybe (flip goto x) $ iterate failure (failure s)
-      where
-        failure = fromMaybe (error "failure: ") . flip Map.lookup f
+        go s' = case goto s' x of
+            Nothing -> go =<< failure s'
+            Just s'' -> return s''
+        failure (State i) = MV.read f i
     goto (State 0) x = Map.lookup x (g V.! 0) <|> Just root
     goto (State i) x = Map.lookup x (g V.! i)
 
