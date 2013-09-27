@@ -46,12 +46,13 @@ construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
 construct ps = constructWithValues $ zip ps ps
 
 constructWithValues :: (Eq a, Hashable a) => [([a], v)] -> ACMachine a v
-constructWithValues pvs = ACMachine (toGotoArray n gotoMap) (toFailureArray n failureMap) (toOutputArray n outputMap)
+constructWithValues pvs = ACMachine g (toFailureArray n failureMap) (toOutputArray n outputMap)
   where
     (m, gotoMap) = buildGoto ps
     n = m + 1
-    failureMap = buildFailure gotoMap
-    outputMap = buildOutput pvs gotoMap failureMap
+    g = toGotoArray n gotoMap
+    failureMap = buildFailure g
+    outputMap = buildOutput pvs g failureMap
     ps = map fst pvs
 
 toGotoArray :: Int -> GotoMap a -> Goto a
@@ -84,20 +85,20 @@ step (ACMachine g f o) x s = (s', output s')
     failure (State i) = f V.! i
     output (State i) = o V.! i
 
-buildOutput :: (Eq a, Hashable a) => [([a], v)] -> GotoMap a -> FailureMap -> OutputMap v
-buildOutput pvs gotoMap failureMap = foldl' build o0 $ tail $ toBFList gotoMap
+buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> FailureMap -> OutputMap v
+buildOutput pvs g failureMap = foldl' build o0 $ tail $ toBFList g
   where
-    build o s = foldl' (\a (_, s') -> let vs = lookupDefault [] (failure s') a in vs `seq` Map.insertWith (flip (++)) s' vs a) o ts
+    build o (State i) = foldl' (\a (_, s') -> let vs = lookupDefault [] (failure s') a in vs `seq` Map.insertWith (flip (++)) s' vs a) o ts
       where
-        ts = Map.toList $ lookupDefault Map.empty s gotoMap
+        ts = Map.toList (g V.! i)
     failure = fromMaybe (error "failure: ") . flip Map.lookup failureMap
     o0 = Map.fromList $ map (fromJust . toKV) pvs
     toKV (p, v) = do
-        s <- finalState gotoMap root p
+        s <- finalState g root p
         return (s, [(length p, v)])
 
-finalState :: (Eq a, Hashable a) => GotoMap a -> State -> [a] -> Maybe State
-finalState m = foldM (\s x -> Map.lookup s m >>= Map.lookup x)
+finalState :: (Eq a, Hashable a) => Goto a -> State -> [a] -> Maybe State
+finalState g = foldM (\(State i) x -> Map.lookup x (g V.! i))
 
 buildGoto :: (Eq a, Hashable a) => [[a]] -> (Int, GotoMap a)
 buildGoto = foldl' (flip extend) (0, Map.empty)
@@ -117,39 +118,27 @@ extend = go root
       where
         sm = fromMaybe Map.empty $ Map.lookup s m
 
-buildFailure :: (Eq a, Hashable a) => GotoMap a -> FailureMap
-buildFailure m = foldl' build Map.empty $ toBFList m
+buildFailure :: (Eq a, Hashable a) => Goto a -> FailureMap
+buildFailure g = foldl' build Map.empty $ toBFList g
   where
-    build f s = foldl' (\a (x, s') -> Map.insert s' (failureState f s x) a) f ts
+    build f s@(State i) = foldl' (\a (x, s') -> Map.insert s' (failureState f s x) a) f ts
       where
-        ts = Map.toList $ lookupDefault Map.empty s m
+        ts = Map.toList (g V.! i)
     failureState _ (State 0) _ = root
     failureState f s x = head $ mapMaybe (flip goto x) $ iterate failure (failure s)
       where
         failure = fromMaybe (error "failure: ") . flip Map.lookup f
-    goto (State 0) x = (Map.lookup root m >>= Map.lookup x) <|> Just root
-    goto s x = Map.lookup s m >>= Map.lookup x
+    goto (State 0) x = Map.lookup x (g V.! 0) <|> Just root
+    goto (State i) x = Map.lookup x (g V.! i)
 
-toBFList :: GotoMap a -> [State]
-toBFList m = ss0
-  where
-    ss0 = root : go 1 ss0
-    go 0 _ = []
-    go n (s:ss) = case Map.lookup s m of
-        Nothing -> go (n - 1) ss
-        Just sm -> children ++ go (n - 1 + Map.size sm) ss
-          where
-            children = Map.elems sm
-    go _ _ = error "toBFList: invalid state"
-
-toBFList' :: Goto a -> [State]
-toBFList' v = ss0
+toBFList :: Goto a -> [State]
+toBFList g = ss0
   where
     ss0 = root : go 1 ss0
     go 0 _ = []
     go n (State i : ss) = children ++ go (n - 1 + Map.size sm) ss
       where
-        sm = v V.! i
+        sm = g V.! i
         children = Map.elems sm
     go _ _ = error "toBFList: invalid state"
 
@@ -160,10 +149,10 @@ renderGraph :: ACMachine Char [Char] -> String
 renderGraph (ACMachine g f o) =
     graph "digraph" $ statements [
           attr "graph" [("rankdir", "LR")]
-        , statements $ map state (toBFList' g)
+        , statements $ map state (toBFList g)
         , statements $ map stateWithOutput $ filter (not . null . snd) $ zip (map State [0..]) (V.toList o)
-        , statements $ map (\s@(State i) -> statements $ map (uncurry $ transEdge s) $ Map.toList $ g V.! i) (toBFList' g)
-        , statements $ map (\s@(State i) -> failEdge s $ f V.! i) (tail $ toBFList' g)
+        , statements $ map (\s@(State i) -> statements $ map (uncurry $ transEdge s) $ Map.toList $ g V.! i) (toBFList g)
+        , statements $ map (\s@(State i) -> failEdge s $ f V.! i) (tail $ toBFList g)
         ]
   where
     statements = intercalate " "
