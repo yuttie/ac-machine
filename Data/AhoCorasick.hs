@@ -31,7 +31,6 @@ type Failure  = Vector State
 type Output v = Vector [(Int, v)]
 
 type GotoMap a   = HashMap State (HashMap a State)
-type OutputMap v = HashMap State [(Int, v)]
 
 newtype State = State Int
               deriving (Eq, Generic)
@@ -46,20 +45,17 @@ construct :: (Eq a, Hashable a) => [[a]] -> ACMachine a [a]
 construct ps = constructWithValues $ zip ps ps
 
 constructWithValues :: (Eq a, Hashable a) => [([a], v)] -> ACMachine a v
-constructWithValues pvs = ACMachine g f (toOutputArray n outputMap)
+constructWithValues pvs = ACMachine g f o
   where
     (m, gotoMap) = buildGoto ps
     n = m + 1
     g = toGotoArray n gotoMap
     f = buildFailure g
-    outputMap = buildOutput pvs g f
+    o = buildOutput pvs g f
     ps = map fst pvs
 
 toGotoArray :: Int -> GotoMap a -> Goto a
 toGotoArray n m = V.generate n (fromMaybe Map.empty . flip Map.lookup m . State)
-
-toOutputArray :: Int -> OutputMap v -> Output v
-toOutputArray n m = V.generate n (fromMaybe [] . flip Map.lookup m . State)
 
 root :: State
 root = State 0
@@ -82,14 +78,22 @@ step (ACMachine g f o) x s = (s', output s')
     failure (State i) = f V.! i
     output (State i) = o V.! i
 
-buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> Failure -> OutputMap v
-buildOutput pvs g f = foldl' build o0 $ tail $ toBFList g
+buildOutput :: (Eq a, Hashable a) => [([a], v)] -> Goto a -> Failure -> Output v
+buildOutput pvs g f = V.create $ do
+    o <- MV.replicate (V.length g) []
+    forM_ (map (fromJust . toKV) pvs) $ \(State i, vs) ->
+        MV.write o i vs
+    forM_ (tail $ toBFList g) $ \(State i) -> do
+        let ts = Map.toList (g V.! i)
+        forM_ ts $ \(_, s'@(State j)) -> do
+            let (State k) = failure s'
+            vs <- MV.read o j
+            vsf <- MV.read o k
+            let vs' = vsf `seq` vs ++ vsf
+            MV.write o j vs'
+    return o
   where
-    build o (State i) = foldl' (\a (_, s') -> let vs = lookupDefault [] (failure s') a in vs `seq` Map.insertWith (flip (++)) s' vs a) o ts
-      where
-        ts = Map.toList (g V.! i)
     failure (State i) = f V.! i
-    o0 = Map.fromList $ map (fromJust . toKV) pvs
     toKV (p, v) = do
         s <- finalState g root p
         return (s, [(length p, v)])
@@ -146,9 +150,6 @@ toBFList g = ss0
         sm = g V.! i
         children = Map.elems sm
     go _ _ = error "toBFList: invalid state"
-
-lookupDefault :: (Eq k, Hashable k) => v -> k -> HashMap k v -> v
-lookupDefault def k m = fromMaybe def $ Map.lookup k m
 
 renderGraph :: ACMachine Char [Char] -> String
 renderGraph (ACMachine g f o) =
