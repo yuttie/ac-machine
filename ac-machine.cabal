@@ -22,4 +22,4 @@ library
 
 source-repository head
   type:     git
-  location: git://github.com/yuttie/ACMachine.git
+  location: git://github.com/yuttie/ac-machine.git
